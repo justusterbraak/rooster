@@ -26,6 +26,15 @@ function toShift(row) {
     end: row.end_time.slice(0, 5),
     clientId: row.client_id,
     employeeId: row.employee_id,
+    type: row.shift_type,
+    frequency: row.frequency,
+    firstWeek: row.first_week,
+    pauseFrom: row.pause_from,
+    pauseUntil: row.pause_until,
+    onDate: row.on_date,
+    endDate: row.end_date,
+    replaces: row.replaces,
+    cancelled: row.cancelled,
   };
 }
 
@@ -76,13 +85,22 @@ const db = {
     const rows = await q(sb.from("shifts").select("*").order("weekday").order("start_time"));
     return rows.map(toShift);
   },
-  async saveShift({ id, weekday, start, end, clientId, employeeId }) {
+  async saveShift({ id, weekday, start, end, clientId, employeeId, type, frequency, firstWeek, pauseFrom, pauseUntil, onDate, endDate, replaces, cancelled }) {
     await save("shifts", id, {
       weekday,
       start_time: start,
       end_time: end,
       client_id: clientId,
       employee_id: employeeId,
+      shift_type: type,
+      frequency,
+      first_week: firstWeek || null,
+      pause_from: pauseFrom || null,
+      pause_until: pauseUntil || null,
+      on_date: onDate || null,
+      end_date: endDate || null,
+      replaces: replaces || null,
+      cancelled: !!cancelled,
     });
   },
   async deleteShift(id) {

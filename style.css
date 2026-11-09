@@ -10,6 +10,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 
 body {
   margin: 0;
@@ -72,6 +73,12 @@ select, input, textarea {
   margin-bottom: 8px;
 }
 .time { font-weight: 600; }
+.tags { font-size: 0.8rem; color: var(--muted); }
+.tags:empty { display: none; }
+.item.paused { opacity: 0.5; }
+
+.weeknav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; text-align: center; }
+.weeknav button { font-size: 1.3rem; padding: 4px 16px; }
 
 section.today { background: var(--today); border-radius: 12px; padding: 4px 10px 2px; margin: 0 -10px; }
 .badge {
@@ -88,3 +95,5 @@ dialog { border: none; border-radius: 12px; padding: 20px; width: min(420px, cal
 dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
 dialog h2 { margin-top: 0; }
 .actions { display: flex; gap: 8px; }
+.choice { display: flex; flex-direction: column; gap: 8px; }
+.choice p { margin: 0 0 8px; }
