@@ -8,6 +8,7 @@ let loginError = "";
 let adminTab = "rooster";
 let filterEmployee = "";
 let viewMonday = mondayOf(new Date());
+let viewMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (c) =>
@@ -126,6 +127,7 @@ async function renderAdmin() {
     ["rooster", "Rooster"],
     ["werknemers", "Werknemers"],
     ["zorgvragers", "Zorgvragers"],
+    ["uren", "Uren"],
   ];
   const nav = `<nav class="tabs">${tabs
     .map(([key, label]) => `<button data-tab="${key}" class="${key === adminTab ? "active" : ""}">${label}</button>`)
@@ -134,7 +136,8 @@ async function renderAdmin() {
   let body;
   if (adminTab === "rooster") body = rosterTab(employees, clients, shifts);
   else if (adminTab === "werknemers") body = employeesTab(employees);
-  else body = clientsTab(clients);
+  else if (adminTab === "zorgvragers") body = clientsTab(clients);
+  else body = hoursTab(employees, shifts);
 
   app.innerHTML = header("Beheer") + nav + body;
   bindLogout();
@@ -165,11 +168,21 @@ async function renderAdmin() {
     app.querySelectorAll("[data-employee]").forEach((b) => {
       b.onclick = () => employeeForm(employees.find((e) => e.id === b.dataset.employee));
     });
-  } else {
+  } else if (adminTab === "zorgvragers") {
     document.getElementById("add").onclick = () => clientForm(null);
     app.querySelectorAll("[data-client]").forEach((b) => {
       b.onclick = () => clientForm(clients.find((c) => c.id === b.dataset.client));
     });
+  } else {
+    app.querySelectorAll("[data-month]").forEach((b) => {
+      b.onclick = () => {
+        const step = Number(b.dataset.month);
+        viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + step, 1);
+        render();
+      };
+    });
+    document.getElementById("download").onclick = () =>
+      downloadHours(employees, shifts).catch((e) => alert(e.message));
   }
 }
 
@@ -317,6 +330,81 @@ function clientsTab(clients) {
       </button>`
       )
       .join("") || `<p class="muted">Nog geen zorgvragers</p>`}`;
+}
+
+// ---------- Hours per month ----------
+
+function monthLabel() {
+  return viewMonth.toLocaleDateString("nl-NL", { month: "long", year: "numeric" });
+}
+
+// One row per employee plus a total row, with minutes per shift type.
+function hoursRows(employees, shifts) {
+  const lastDay = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 0);
+  const minutes = minutesByEmployee(shifts, viewMonth, lastDay);
+  const empty = { count: 0, dag: 0, avond: 0, slaap: 0, total: 0 };
+  const rows = employees.map((e) => ({ name: e.name, ...(minutes[e.id] ?? empty) }));
+  const total = { name: "Totaal", ...empty };
+  for (const row of rows) for (const key of Object.keys(empty)) total[key] += row[key];
+  return { rows, total };
+}
+
+function formatHours(minutes) {
+  return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
+function hoursTab(employees, shifts) {
+  const { rows, total } = hoursRows(employees, shifts);
+  const tr = (r, cell) => `<tr>
+      <${cell}>${esc(r.name)}</${cell}><${cell}>${r.count}</${cell}>
+      <${cell}>${formatHours(r.dag)}</${cell}><${cell}>${formatHours(r.avond)}</${cell}>
+      <${cell}>${formatHours(r.slaap)}</${cell}><${cell}>${formatHours(r.total)}</${cell}>
+    </tr>`;
+  return `
+    <div class="weeknav">
+      <button data-month="-1" aria-label="Vorige maand">‹</button>
+      <strong>${esc(monthLabel())}</strong>
+      <button data-month="1" aria-label="Volgende maand">›</button>
+    </div>
+    <p class="muted">Geplande uren volgens het rooster. Een nachtdienst telt mee in de maand waarin hij begint.</p>
+    <div class="table-wrap">
+      <table class="hours">
+        <thead><tr><th>Werknemer</th><th>Diensten</th><th>Dag</th><th>Avond</th><th>Slaap</th><th>Totaal</th></tr></thead>
+        <tbody>${rows.map((r) => tr(r, "td")).join("")}</tbody>
+        <tfoot>${tr(total, "th")}</tfoot>
+      </table>
+    </div>
+    <button id="download">Download als Excel</button>`;
+}
+
+// SheetJS (Excel files) is only loaded when someone downloads, to keep the app light.
+function loadSheetJs() {
+  if (window.XLSX) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+    script.onload = resolve;
+    script.onerror = () => reject(new Error("Downloaden lukt nu niet. Controleer je internetverbinding."));
+    document.head.appendChild(script);
+  });
+}
+
+// A real .xlsx, so it opens the same in Dutch and English Excel and hours are numbers.
+async function downloadHours(employees, shifts) {
+  const { rows, total } = hoursRows(employees, shifts);
+  const hours = (minutes) => Math.round((minutes / 60) * 100) / 100;
+  const data = [
+    ["Werknemer", "Diensten", "Dag (uren)", "Avond (uren)", "Slaap (uren)", "Totaal (uren)"],
+    ...[...rows, total].map((r) => [r.name, r.count, hours(r.dag), hours(r.avond), hours(r.slaap), hours(r.total)]),
+  ];
+  const month = `${viewMonth.getFullYear()}-${String(viewMonth.getMonth() + 1).padStart(2, "0")}`;
+
+  await loadSheetJs();
+  const sheet = XLSX.utils.aoa_to_sheet(data);
+  sheet["!cols"] = [{ wch: 28 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 13 }];
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book, sheet, `Uren ${month}`);
+  XLSX.writeFile(book, `uren-${month}.xlsx`);
 }
 
 // Throws if the employee or the client already has another shift at the same time

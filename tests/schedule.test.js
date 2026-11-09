@@ -96,5 +96,25 @@ eq("invaller zelf bezet op dat moment",
 
 eq("label nacht", s.timeLabel(sh({ start: "23:00", end: "07:00" })), "23:00 - 07:00 (volgende dag)");
 
+// Hours per month (November 2026 has 5 Mondays: 2, 9, 16, 23, 30)
+const nov = [d("2026-11-01"), d("2026-11-30")];
+const hours = (list) => s.minutesByEmployee(list, ...nov);
+const weeklyMon = sh({ id: "m", type: "dag" }); // 2 hours
+eq("uren: 5 maandagen x 2 uur", hours([weeklyMon]).e1, { count: 5, dag: 600, avond: 0, slaap: 0, total: 600 });
+eq("uren: nachtdienst telt volledig (8 uur), 4 zaterdagen",
+  hours([sh({ id: "z", weekday: 5, start: "23:00", end: "07:00", type: "slaap" })]).e1.slaap, 4 * 480);
+// Saturday 31 Oct 23:00 starts in October; Monday 30 Nov night starts in November.
+eq("uren: nacht vanaf 31 okt telt niet voor november",
+  hours([sh({ id: "o", frequency: "once", onDate: "2026-10-31", weekday: 5, start: "23:00", end: "07:00", type: "slaap" })]).e1, undefined);
+eq("uren: nacht op 30 nov telt voor november",
+  hours([sh({ id: "o", frequency: "once", onDate: "2026-11-30", weekday: 0, start: "23:00", end: "07:00", type: "slaap" })]).e1.slaap, 480);
+const subNov = sh({ id: "r", frequency: "once", onDate: "2026-11-16", replaces: "m", employeeId: "e2", type: "avond" });
+const cancelNov = sh({ id: "c", frequency: "once", onDate: "2026-11-23", replaces: "m", cancelled: true });
+const withChanges = hours([weeklyMon, subNov, cancelNov]);
+eq("uren: vaste werknemer zonder invaldag en afgezegde dag", withChanges.e1.total, 3 * 120);
+eq("uren: invaller krijgt de uren, met eigen type", withChanges.e2, { count: 1, dag: 0, avond: 120, slaap: 0, total: 120 });
+eq("uren: gepauzeerde weken tellen niet",
+  hours([sh({ id: "p", pauseFrom: "2026-11-01", pauseUntil: "2026-11-15" })]).e1.total, 3 * 120);
+
 console.log(failed ? `\n${failed} FOUT` : "\nalles OK");
 process.exitCode = failed ? 1 : 0;

@@ -134,6 +134,12 @@ function occursIn(shift, monday, overrides) {
   return state && state.status === "normal" ? state.date : null;
 }
 
+// Length of a shift in minutes; a night shift runs until the next morning.
+function shiftMinutes(shift) {
+  const length = toMinutes(shift.end) - toMinutes(shift.start);
+  return length > 0 ? length : length + 1440;
+}
+
 // Each occurrence in `weeks` weeks from `fromMonday` as absolute minutes [start, end).
 function occurrences(shift, fromMonday, weeks, overrides) {
   const result = [];
@@ -141,9 +147,29 @@ function occurrences(shift, fromMonday, weeks, overrides) {
     const date = occursIn(shift, addDays(fromMonday, w * 7), overrides);
     if (!date) continue;
     const start = dayNumber(date) * 1440 + toMinutes(shift.start);
-    let length = toMinutes(shift.end) - toMinutes(shift.start);
-    if (length <= 0) length += 1440;
-    result.push({ start, end: start + length, date });
+    result.push({ start, end: start + shiftMinutes(shift), date });
+  }
+  return result;
+}
+
+// Planned minutes per employee for shifts that start between `from` and `until`
+// (inclusive), as { [employeeId]: { count, dag, avond, slaap, total } }.
+// Substitutes get the hours, cancelled and paused shifts do not count.
+function minutesByEmployee(shifts, from, until) {
+  const overrides = buildOverrides(shifts);
+  const first = isoDate(from);
+  const last = isoDate(until);
+  const result = {};
+  for (let monday = mondayOf(from); monday <= until; monday = addDays(monday, 7)) {
+    for (const shift of shifts) {
+      const date = occursIn(shift, monday, overrides);
+      if (!date || isoDate(date) < first || isoDate(date) > last) continue;
+      const row = (result[shift.employeeId] ??= { count: 0, dag: 0, avond: 0, slaap: 0, total: 0 });
+      const minutes = shiftMinutes(shift);
+      row.count += 1;
+      row[shift.type] += minutes;
+      row.total += minutes;
+    }
   }
   return result;
 }
@@ -168,6 +194,6 @@ function findClash(candidate, others, fromMonday, overrides = new Map(), weeks =
 if (typeof module !== "undefined") {
   module.exports = {
     isoWeek, mondayOf, addDays, parseDate, isoDate, weekdayOf, inPattern, statusIn, occursIn,
-    isPaused, buildOverrides, findClash, timeLabel, isNight,
+    isPaused, buildOverrides, findClash, timeLabel, isNight, minutesByEmployee,
   };
 }
